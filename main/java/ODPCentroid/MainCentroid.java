@@ -20,6 +20,7 @@ import org.deeplearning4j.models.embeddings.WeightLookupTable;
 import org.deeplearning4j.models.word2vec.VocabWord;
 import org.deeplearning4j.models.word2vec.Word2Vec;
 import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.factory.Nd4j;
 
 import ETC_noUse.word2vec;
 import Main.StaticValues;
@@ -146,7 +147,7 @@ public class MainCentroid {
 		
 		for (int i = 0; i < category.documentInfo.size(); i++) {
 			Document doc = category.documentInfo.get(i);
-			//System.out.println("Doc title and desc: " + doc.title + doc.description);
+			//System.out.println("for categ " + category.categoryid + "Doc title and desc: " + doc.title + doc.description);
 			
 			INDArray tmp = getCentroid(doc.title + " " + doc.description, 1);
 
@@ -167,9 +168,12 @@ public class MainCentroid {
 				}
 			}
 		}
-		if(result == null)
-			return null;
-		
+		if(result == null){
+			result = Nd4j.zeros(300);
+			System.out.println("getCategoryCentroid for category " + category.categoryid + " init 300 zeros..");
+			//return null;
+			return result;
+		}
 		
 		result = result.div(category.documentInfo.size());
 		//if (weight != 1)
@@ -207,7 +211,7 @@ public class MainCentroid {
 		//System.out.println("Centroid map is ready of size " + centroidMap.size());
 		Map<Integer, INDArray> mergeCentroids = new HashMap<Integer, INDArray>();
 		curCate = allCategoriesMap.get(0);
-		getCategoryMC(curCate, 0,  mergeCentroids);
+		getCategoryMC(curCate, curCate.categoryid,  mergeCentroids);
 		System.out.println("MC map is ready of size " + mergeCentroids.size());
 
 	}
@@ -216,79 +220,55 @@ public class MainCentroid {
 
 		//INDArray result = null;
 		ArrayList<CategoryInfo> childList = category.childCategory;
-		//for(CategoryInfo cat : childList){
-			//System.out.println("WRONG: Category " + category.categoryid + " vot tebe child: " + cat.categoryid);
-			//System.out.println("Category " + category.parentid + " vot tebe child: " + cat.categoryid);
-		//}
-		
-		///INDArray currentCentroid = centroidMap.get(rootId);
 
+		//System.out.println(category.categoryName);
+		//System.out.println(category.fullpath);
+		//System.out.println("childList size is " + childList.size());
+		/*for(CategoryInfo cat : childList) {
+			System.out.println("WRONG: Category " + category.categoryid + " vot tebe child: " + cat.categoryid);
+			System.out.println("Category " + category.parentid + " vot tebe child: " + cat.categoryid);
+		}*/
+		
 		if ( category.isleaf == 1 || childList == null || childList.size() == 0) {
-			///if (currentCentroid == null) {
-			///	System.out.println("current centroid from category " + rootId + " is nulls");
-			///	mergeCentroidMap.put(rootId, null);
-			///	return;
-			///}
-			mergeCentroidMap.put(rootId, getCategoryCentroid(category));
+			INDArray leafCentroid = getCategoryCentroid(category);
+			
+			if (leafCentroid == null) {
+				System.out.println("Catid " + category.categoryid + " Warning! leaf centroid returned null " + leafCentroid);
+			}
+			mergeCentroidMap.put(rootId, leafCentroid);
 			return;
 		} else {
-			/*** add centroid of a category and children's merge centroids ***/
-			try {
-				for (CategoryInfo child : childList) {
-					getCategoryMC(child, child.categoryid,  mergeCentroidMap);
-				}
-
-			} catch (StackOverflowError e) {
-				System.out.println("category depth is " +  category.level + " and leaf is " + category.isleaf);
+			/* add centroid of a category and children's merge centroids */
+			for (CategoryInfo child : childList) {
+				getCategoryMC(child, child.categoryid, mergeCentroidMap);
 			}
 
-			//already computed after recursion returns
+			/*already computed after recursion returns*/
 			INDArray currentCentroid = getCategoryCentroid(category);
 			INDArray mergeCentroid = null;
-			assert(currentCentroid != null);
+			//assert(currentCentroid != null);
 			if (currentCentroid != null) {
-				/*adjust weights : add 0.8 - bigger weight to parent centroid */
-				/*for (int i =0; i < currentCentroid.size(); i++) {
-					currentCentroid.getCentroid().set(i, currentCentroid.getCentroid().get(i) * 0.8);
-				}*/
 				mergeCentroid = currentCentroid.mul(0.8);
-				//mergeCentroid.normalize();
 			}
-			//double norm;
 			
+			if (mergeCentroid == null) {
+				mergeCentroid = Nd4j.zeros(300);
+				System.out.println("empty merge centroid for  category " + category.categoryid + " init 300 zeros..");
+			}
 			for (CategoryInfo child : childList) {
-				INDArray childCentroid = mergeCentroidMap.get(child);
+				INDArray childCentroid = mergeCentroidMap.get(child.categoryid);
+				System.out.println("MC child is " + child.categoryid);
 				if (childCentroid == null) {
-					System.out.println("empty child centroid for category "+ child + ", skipping..");
+					System.out.println("empty child centroid for category "+ child.parentid + ", skipping..");
 					continue;
 				}
-				//List<Double> childCentroidList = mergeCentroidMap.get(child).getCentroid();
-				//norm = mergeCentroidMap.get(child).setCentroid_lengthNorm();
 				
-				/*** merge-centroid calculation by term addition ***/
-				// if(merge_centroid!=null){
-
-				if (mergeCentroid != null) {
-					//System.out.println("merge centroid size is " + mergeCentroid.getCentroid().size());
-					//System.out.println("child centroid list size is " + childCentroidList.size());
-					//for (int i = 0; i < childCentroidList.size(); i++) {
-					mergeCentroid = mergeCentroid.mul(0.8).add(childCentroid.mul(0.2)) /*/norm) */;
-					//}
-				} else {
-					System.out.println("empty merge centroid for child category " + child + ", breaking..");
-				}
-				
-				// put Normalized merge - centroids
-				//double numOfCentroids = (currentCentroid == null) ? childList.size() : (childList.size() +1);
+				mergeCentroid = mergeCentroid.mul(0.8).add(childCentroid.mul(0.2)) /*/norm) */;
+				// not sure why divide every time
 				double numOfCentroids = childList.size() + 1;
-				//for (int i = 0; i < mergeCentroid.getCentroid().size(); i++) {
 				mergeCentroid.div(numOfCentroids);
-				//}
-				//mergeCentroid.normalize();
 			}
-			mergeCentroidMap.put(rootId, mergeCentroid);
-			//System.out.println("MC map size " + mergeCentroidMap.size());
-		}
+			mergeCentroidMap.put(rootId, mergeCentroid);		}
 		System.out.println("MC map size " + mergeCentroidMap.size());
 	}
 	
@@ -459,12 +439,13 @@ public class MainCentroid {
 		ArrayList<CategoryInfo> allCategoriesList = ODP_DB.getCategoryInfo();
 		//HashMap<Integer, CategoryInfo> allCategories = new HashMap<Integer, CategoryInfo>();
 		System.out.println("allCategoriesList size is " + allCategoriesList.size());
-		
 		for (int i = 0; i < allCategoriesList.size(); i++) {
 			CategoryInfo thisCategory = allCategoriesList.get(i);
-			assert(thisCategory.categoryid == i);
 			//System.out.println(i + ". Catid " + thisCategory.categoryid);
-			CategoryInfo parentCategory = allCategoriesList.get(thisCategory.parentid);
+			if (thisCategory.parentid <= 0) {
+				continue;
+			}
+			CategoryInfo parentCategory = allCategoriesList.get(thisCategory.parentid - 1);
 			//System.out.println(i + ". Parent Catid " + thisCategory.parentid);
 
 			// ChildCategory 추가 - 카테고리 정보와 documentInfo도 추가

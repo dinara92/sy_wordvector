@@ -1,6 +1,10 @@
 package ODPCentroid;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,8 +16,23 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
-public class CentroidDB {
+import javax.sql.DataSource;
+
+import org.nd4j.jdbc.loader.impl.BaseLoader;
+import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.factory.Nd4j;
+import org.nd4j.linalg.ops.transforms.Transforms;
+
+import com.mysql.jdbc.Blob;
+
+
+public class CentroidDB{
+	
+
+
+
 	String driver = "com.mysql.jdbc.Driver";
 	String url = "jdbc:mysql://localhost:3306/dmoz2013_s";
 	String user = "root"; // @jve:decl-index=0:
@@ -48,31 +67,7 @@ public class CentroidDB {
 	
 	
 	
-	public ArrayList<CategoryInfo> getCategoryInfo_Level(int level) throws SQLException{
-	 
-		ArrayList<CategoryInfo> allCate_speciflevel = new ArrayList<CategoryInfo>();
- 
-		if(conn == null)
-		 connectDB();
-		String query = "select * from dmoz_original where LEVEL = " + level + ";";
-		stmt = conn.createStatement();
-
-		// execute the query, and get a java resultset
-		ResultSet rs = stmt.executeQuery(query);
-
-		// iterate through the java resultset
-		while (rs.next()) {
-			int id = rs.getInt("ID");
-			CategoryInfo tmp = new CategoryInfo(id, rs.getString("NAME"), rs.getString("FULLNAME"),
-					rs.getInt("PARENTID"), rs.getInt("LEVEL"), rs.getInt("URLNUM"), rs.getInt("ISLEAF"),
-					rs.getInt("CHILDNUM"), rs.getInt("INVERSELEVEL"), rs.getInt("SUBTREEURLNUM"), rs.getInt("SUBTREENUM"));
-			allCate_speciflevel.add(tmp);
-		}
-		stmt.close();
-		 
-		return allCate_speciflevel;
-		
-	}
+	
 	
 	//new function, to get all categories info
 	public ArrayList<CategoryInfo> getCategoryInfo() throws SQLException{
@@ -100,7 +95,106 @@ public class CentroidDB {
 		return allCate_speciflevel;
 		
 	}
+	public ArrayList<CategoryInfo> getCategoryInfo_Level(int level) throws SQLException{
+		 
+		ArrayList<CategoryInfo> allCate_speciflevel = new ArrayList<CategoryInfo>();
+ 
+		if(conn == null)
+		 connectDB();
+		String query = "select * from dmoz_original where LEVEL = " + level + 
+				" and fullname not like " + "\"%" + "Top/World" + "%\""  + " and fullname not like " + "\"%" + "Top/Regional" + "%\"" + ";";
+		stmt = conn.createStatement();
+
+		// execute the query, and get a java resultset
+		ResultSet rs = stmt.executeQuery(query);
+
+		// iterate through the java resultset
+		while (rs.next()) {
+			int id = rs.getInt("ID");
+			CategoryInfo tmp = new CategoryInfo(id, rs.getString("NAME"), rs.getString("FULLNAME"),
+					rs.getInt("PARENTID"), rs.getInt("LEVEL"), rs.getInt("URLNUM"), rs.getInt("ISLEAF"),
+					rs.getInt("CHILDNUM"), rs.getInt("INVERSELEVEL"), rs.getInt("SUBTREEURLNUM"), rs.getInt("SUBTREENUM"));
+			allCate_speciflevel.add(tmp);
+		}
+		stmt.close();
+		 
+		return allCate_speciflevel;
+		
+	}
+	//new function, to get all categories info as a HashMap
+	public HashMap<Integer, CategoryInfo> getCategoryInfoLevel(int level) throws SQLException{
+		 
+		HashMap<Integer, CategoryInfo> allCate_speciflevel = new HashMap<Integer, CategoryInfo>();
+ 
+		if(conn == null)
+		 connectDB();
+		String query = "select * from dmoz_original where level = " + level + 
+				" and fullname not like " + "\"%" + "Top/World" + "%\""  + " and fullname not like " + "\"%" + "Top/Regional" + "%\"" + ";";
+		stmt = conn.createStatement();
+
+		// execute the query, and get a java resultset
+		ResultSet rs = stmt.executeQuery(query);
+
+		// iterate through the java resultset
+		while (rs.next()) {
+			int id = rs.getInt("ID");
+			CategoryInfo tmp = new CategoryInfo(id, rs.getString("NAME"), rs.getString("FULLNAME"),
+					rs.getInt("PARENTID"), rs.getInt("LEVEL"), rs.getInt("URLNUM"), rs.getInt("ISLEAF"),
+					rs.getInt("CHILDNUM"), rs.getInt("INVERSELEVEL"), rs.getInt("SUBTREEURLNUM"), rs.getInt("SUBTREENUM"));
+			allCate_speciflevel.put(id, tmp);
+		}
+		stmt.close();
+		 
+		return allCate_speciflevel;
+		
+	}
 	
+	//new function, to get all categories info as a HashMap
+	public INDArray getChildMCInfo(int categoryid) throws SQLException{
+		  
+		if(conn == null)
+		 connectDB();
+		String query = "select * from mcs_info_after_bug_fix where id = " + categoryid + ";";
+		stmt = conn.createStatement();
+
+		// execute the query, and get a java resultset
+		ResultSet rs = stmt.executeQuery(query);
+		INDArray mc_array = null;
+		// iterate through the java resultset
+		while (rs.next()) {
+			int id = rs.getInt("id");
+			String mc = rs.getString("mc_value");
+			//mc_array = here need to parse string
+		}
+		stmt.close();
+		 
+		return mc_array;
+		
+	}
+	
+	public void storeChildMCInfo (Integer parent_catid, INDArray parentMC) throws SQLException, IOException{
+			
+		//String parentMC_string = parentMC.toString();
+		//System.out.println(parentMC_string);
+
+		//float[] parentMC_float = parentMC;
+			//Nd4j.create(parentMC_float);
+		
+		/*if(conn == null)
+			 connectDB();	
+		PreparedStatement statement_save;			        		
+		String query = "INSERT INTO mcs_info_after_bug_fix (categoryid, mc_value)"
+        		        + " values (?, ?);";
+		statement_save = (PreparedStatement) conn.prepareStatement(query);
+		statement_save.setInt(1, parent_catid);
+		statement_save.setString(2, parentMC_string);
+		statement_save.setObject(2, parentMC);
+		statement_save.executeUpdate();*/
+		
+		
+
+		}
+
 	public HashMap<Integer, CategoryInfo> getHeruisticCategoryInfo(ArrayList<String> HueristicCategory) throws IOException, SQLException {
 		HashMap<Integer, CategoryInfo> HueristicInfo = new HashMap<Integer, CategoryInfo>();
 		
@@ -187,7 +281,7 @@ public class CentroidDB {
 
 	public void storeKNNResult(CategoryInfo curCate) throws SQLException {
 		// TODO Auto-generated method stub
-		String query = " insert into keyword_info_mc_test (CategoryId, KeywordList, Fullpath)"
+		String query = " insert into test_input_dl4j_level5 (CategoryId, KeywordList, Fullpath)"
 		        + " values (?, ?, ?)";
 		      PreparedStatement preparedStmt = conn.prepareStatement(query);
 		      preparedStmt.setInt(1, curCate.categoryid);
@@ -207,5 +301,8 @@ public class CentroidDB {
 	
 		return result;
 	}
+
+
+	
 
 }

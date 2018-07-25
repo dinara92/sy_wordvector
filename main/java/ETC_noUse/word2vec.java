@@ -24,8 +24,13 @@ public class word2vec
 	public void LoadModel() throws IOException {
 		// TODO Auto-generated constructor stub
 		if(StaticValues.vec == null){
-			File gModel = new File("/home/dinara/word2vec/word2vec_gensim_ODP/ODP_word2vec/GoogleNews-vectors-negative300.bin");
-	        StaticValues.vec = (Word2Vec) WordVectorSerializer.loadGoogleModel(gModel, true);
+			//File gModel = new File("/home/dinara/word2vec/word2vec_gensim_ODP/ODP_word2vec/GoogleNews-vectors-negative300.bin");
+			File gModel = new File("//home/dinara/word2vec/word2vec_gensim_ODP/ODP_word2vec/dmoz_pages_all_no_world_only_and_1bil_words_news_10context_300f_0mincount.txt");
+			
+			//File gModel = new File("/home/dinara/word2vec/word2vec_gensim_ODP/ODP_word2vec/OUTV_dmoz_pages_all_no_world_only_and_1bil_words_news_10context_300f_0mincount.txt");
+
+			StaticValues.vec = (Word2Vec) WordVectorSerializer.readWord2VecModel(gModel, false);
+		    //StaticValues.vec = (Word2Vec) WordVectorSerializer.loadGoogleModel(gModel, true);
 		}
 	}
 //    public static void main( String[] args ) throws IOException, SQLException

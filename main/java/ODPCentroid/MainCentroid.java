@@ -1,8 +1,10 @@
 package ODPCentroid;
 
+import java.beans.PropertyVetoException;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.sql.Blob;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,6 +14,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +22,11 @@ import java.util.Map;
 import org.deeplearning4j.models.embeddings.WeightLookupTable;
 import org.deeplearning4j.models.word2vec.VocabWord;
 import org.deeplearning4j.models.word2vec.Word2Vec;
+import org.nd4j.jdbc.mysql.MysqlLoader;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.factory.Nd4j;
+
+import com.mchange.v2.c3p0.ComboPooledDataSource;
 
 import ETC_noUse.word2vec;
 import Main.StaticValues;
@@ -32,12 +38,23 @@ public class MainCentroid {
 	ArrayList<String> HeuristicCategory_path = null;
 	HashMap<String, Integer> termDF = null;
 
-	public MainCentroid() throws SQLException, IOException {
+	public MainCentroid() throws Exception {
+		
+		//loadINDArrayFromDBNoParam();
+		//saveINDArrayToDBNoParam();
+		if (words == null)
+			words = StaticValues.vec.getLookupTable();
+
+		//INDArray centroid = loadINDArrayFromDB(31213);
+		//Collection<String> KnnWordsList = StaticValues.vec.wordsNearest(centroid, 20);
+		//System.out.println(KnnWordsList);
+		
 		init();
 		start();
+		//runCentroid();
 	}
 
-	public void init() throws SQLException {
+	public void init() throws Exception {
 		if (ODP_DB == null) {
 			ODP_DB = new CentroidDB();
 			ODP_DB.connectDB();
@@ -46,25 +63,180 @@ public class MainCentroid {
 		System.out.println("starting to load dictionary from db");
 		termDF = ODP_DB.LoadTermInfo();
 	}
+	
+	public void runCentroid() throws SQLException, IOException{
+		
+		HashMap <Integer, INDArray> centroidMap = new HashMap<Integer, INDArray>();
+		
+		//for (int i = 14; i > 0; i--) {
+		HashMap<Integer, CategoryInfo> Heuri_Info_MCC = getHuri_specificLevel_MCC(5);
+		System.out.println("Level " + 5 + " " + Heuri_Info_MCC.size());
+		
 
-	public void start() throws SQLException, IOException {
+		ArrayList<Integer> categoryIds = new ArrayList<Integer>(Heuri_Info_MCC.keySet());
+		for (int i = 0; i < categoryIds.size(); i++) {
+			int curID = categoryIds.get(i);
+			CategoryInfo curCate = Heuri_Info_MCC.get(curID);
+
+			INDArray centroid = getCategoryCentroid(curCate);
+			centroidMap.put(curID, centroid);
+		}
+		
+		//}
+	}
+	public void start() {
 		// 12.20 i몇번째부터인지 보기.
-		/*for (int i = 14; i > 0; i--) {
-			HashMap<Integer, CategoryInfo> Heuri_Info_MCC = getHuri_specificLevel_MCC(i); //get Heuristics categories only from ODPcategoris2008.txt
-			System.out.println(i + " " + Heuri_Info_MCC.size());
-			get_store_NearestWords(Heuri_Info_MCC);
-		}*/
-		System.out.println("starting to build category map");
-		//HashMap<Integer, CategoryInfo> allCategInfoMap = getAllCategoriesNew();
-		List<CategoryInfo> allCategInfoMap = getAllCategoriesNewList();
-		System.out.println("All taxonomy size is " + allCategInfoMap.size());
-		//get_store_NearestWords(allCategInfoMap);
-		if (words == null)
-			words = StaticValues.vec.getLookupTable();
-		makeMCMap(allCategInfoMap);
+		//for (int i = 14; i > 0; i--) {
+			//HashMap<Integer, CategoryInfo> Heuri_Info_MCC = getHuri_specificLevel_MCC(5);
+			//System.out.println("Level " + 5 + " " + Heuri_Info_MCC.size());
+			//get_store_NearestWords(Heuri_Info_MCC);
+		//}
+		
+		//HashMap<Integer, CategoryInfo> Heuri_Info_MCC = getHuri_specificLevel_MCC(5);
+		//System.out.println(5 + " " + Heuri_Info_MCC.size());
+		///check_Heuri_Info_MCC(Heuri_Info_MCC);
+		//System.out.println("starting to build category map");
+		//List<CategoryInfo> allCategInfoMap = getAllCategoriesNewList();
+		//System.out.println("All taxonomy size is " + allCategInfoMap.size());
+		
+		//if (words == null)
+			//words = StaticValues.vec.getLookupTable();
+
+		//makeMCMap(allCategInfoMap, Heuri_Info_MCC);
+		
+		
+		//----------------------
+		for(int i = 7; i > 0; i--){
+			System.out.println("-------------------LEVEL------------------- : " + i);
+			HashMap<Integer, CategoryInfo> parentInfo = null;
+			try {
+				parentInfo = getCategoriesNewListByLevel(i, i + 1);
+				
+				
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} //max level : 14
+			INDArray parentMC;
+			
+	 ComboPooledDataSource ds = new ComboPooledDataSource();
+        ds.setJdbcUrl("jdbc:mysql://localhost:3306/dmoz2016?user=root&password=newpass");
+        MysqlLoader loader = null;
+        try {
+			ds.setDriverClass("com.mysql.jdbc.Driver");
+		} catch (PropertyVetoException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+        try {
+			loader = new MysqlLoader(ds, "jdbc:mysql://localhost:3306/dmoz2016?user=root&password=newpass", "mcs_info", "mc_value");
+		} catch (Exception e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+        try{
+ 
+			for(Integer parent_catid: parentInfo.keySet()){
+				parentMC = getCategoryMCfromDB(parentInfo.get(parent_catid), loader);
+				try {
+						saveINDArrayToDB(parent_catid, parentMC, loader);
+						//System.out.println("This is in db " + parent_catid + " mc: " + parentMC);
+					//}
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+					System.out.println("Not this catid " + parent_catid + " with this mc : " + parentMC);
+				}	//store parent merge centroid to db
+				
+			}
+        }
+        finally{
+        	ds.close();
+        }
+		}
 
 	}
 
+	public void saveINDArrayToDB(Integer parent_catid, INDArray parentMC, MysqlLoader loader) throws Exception{
+        //ComboPooledDataSource ds = new ComboPooledDataSource();
+        //ds.setJdbcUrl("jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass");
+        //ds.setDriverClass("com.mysql.jdbc.Driver");
+        //MysqlLoader loader = new MysqlLoader(ds, "jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass", "mcs_info", "mc_value");
+        //try{
+	        //loader.save(Nd4j.create(new float[]{0,2,3,4}), "30");
+	        loader.save(parentMC, parent_catid.toString());
+	        loader.insertStatement();
+        //}
+        //finally{
+        //	ds.close();
+        //}
+	}
+
+	public void saveINDArrayToDBNoParam() throws Exception{
+        ComboPooledDataSource ds = new ComboPooledDataSource();
+        ds.setJdbcUrl("jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass");
+        ds.setDriverClass("com.mysql.jdbc.Driver");
+        MysqlLoader loader = new MysqlLoader(ds, "jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass", "mcs_info_after_bug_fix", "mc_value");
+        loader.save(Nd4j.create(new double[]{-0.00, -0.32, 0.04, 0.33, -0.11, -0.19, 0.07, 0.02, -0.16, 0.16, -0.06, -0.00, -0.03, 0.17, 0.14, -0.08, 0.13, -0.01, 0.03, -0.22, -0.01, 0.04, 0.06, 0.24, -0.19, -0.10, 0.03, 0.17, -0.22, 0.01, 0.10, -0.03, 0.15, -0.30, 0.11, -0.05, -0.03, -0.04, 0.16, 0.20, 0.23, -0.22, -0.08, 0.18, -0.02, 0.00, -0.07, -0.22, 0.16, 0.25, -0.23, -0.14, -0.11, -0.16, 0.01, -0.10, -0.09, 0.05, -0.02, -0.07, -0.30, -0.14, 0.08, 0.07, -0.11, -0.18, 0.19, -0.04, -0.12, 0.33, -0.06, 0.12, 0.11, 0.04, -0.38, -0.14, 0.11, 0.21, -0.21, 0.00, -0.17, -0.35, 0.13, -0.04, -0.09, 0.24, -0.12, 0.26, -0.01, -0.02, -0.24, -0.30, 0.17, 0.09, -0.03, 0.10, 0.26, -0.05, 0.02, -0.07, 0.07, 0.14, -0.06, -0.01, -0.05, 0.18, -0.02, 0.05, -0.07, -0.00, 0.05, -0.12, 0.25, 0.01, 0.04, 0.23, -0.20, -0.33, 0.00, 0.15, -0.22, -0.07, -0.08, 0.08, 0.22, -0.20, 0.03, -0.00, -0.12, 0.31, 0.13, 0.25, -0.03, 0.12, -0.18, -0.08, -0.07, 0.06, -0.07, 0.28, -0.20, -0.28, 0.03, -0.08, -0.19, 0.34, 0.05, 0.12, 0.06, 0.01, 0.12, 0.03, -0.03, 0.08, -0.05, -0.07, 0.06, 0.06, -0.23, -0.02, 0.01, 0.29, 0.13, -0.07, -0.04, -0.18, 0.09, 0.13, -0.07, 0.22, -0.05, 0.06, 0.01, -0.26, 0.04, -0.19, 0.02, -0.11, -0.29, 0.03, 0.03, -0.19, 0.18, -0.11, 0.04, -0.01, -0.00, -0.11, -0.02, 0.06, 0.08, -0.09, 0.05, 0.01, 0.06, -0.20, 0.12, 0.00, -0.04, 0.07, -0.01, 0.06, 0.06, -0.04, 0.11, -0.15, 0.18, -0.06, -0.26, 0.31, 0.11, -0.08, -0.16, -0.07, -0.20, 0.13, -0.01, 0.16, 0.22, -0.11, -0.19, 0.08, -0.03, 0.07, 0.00, -0.05, 0.13, 0.12, -0.18, -0.11, -0.19, 0.33, -0.19, -0.06, 0.19, 0.12, 0.29, 0.25, -0.14, -0.06, 0.08, 0.15, 0.01, -0.12, 0.06, -0.03, -0.32, 0.11, -0.29, -0.39, 0.01, 0.26, -0.19, 0.05, 0.03, -0.19, 0.21, -0.04, 0.04, -0.22, 0.19, 0.17, -0.05, -0.12, 0.12, 0.00, 0.23, 0.01, -0.06, 0.21, -0.04, -0.25, -0.11, 0.02, 0.13, 0.06, 0.04, -0.01, -0.18, 0.25, -0.13, -0.10, 0.23, 0.14, 0.02, 0.05, 0.26, 0.18, 0.26, 0.07, 0.08, 0.28, -0.26, 0.08, -0.03, 0.09, -0.23, 0.26, 0.01, 0.22}), "30");
+        loader.insertStatement();
+	}
+	public INDArray loadINDArrayFromDB(Integer id, MysqlLoader loader) throws Exception{
+		//ComboPooledDataSource ds = new ComboPooledDataSource();
+	    //ds.setJdbcUrl("jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass");
+	    //MysqlLoader loader = new MysqlLoader(ds, "jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass", "mcs_info", "mc_value");
+	    INDArray loaded;
+	    //try{
+			Blob b = loader.loadForID(id.toString());
+	        loaded = loader.load(b);
+	        //System.out.println("Loaded " + loaded);
+	    //}
+	    //finally{
+	    //	ds.close();
+	    //}
+        return loaded;
+	}
+	
+	public void loadINDArrayFromDBNoParam() throws Exception{
+		ComboPooledDataSource ds = new ComboPooledDataSource();
+	    ds.setJdbcUrl("jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass");
+	    MysqlLoader loader = new MysqlLoader(ds, "jdbc:mysql://localhost:3306/dmoz2013_s?user=root&password=newpass", "mcs_info_after_bug_fix", "mc_value");
+		Blob b = loader.loadForID("30");
+        INDArray loaded = loader.load(b);
+
+        if(Nd4j.create(new float[]{1, 6, 5}).equals(loaded))
+        	System.out.println("Equal" + loaded);
+        
+        System.out.println(loaded);
+	}
+		
+	public void heuriInfoMCC_All() throws SQLException, IOException{
+		
+		HashMap<Integer, CategoryInfo> Heuri_Info_MCC = null;
+		HashMap<Integer, CategoryInfo> Heuri_Info_MCC_All = new HashMap<Integer, CategoryInfo>();
+
+		//int num_of_categs = 0;
+		for (int i = 14; i > 0; i--) {
+			Heuri_Info_MCC = getHuri_specificLevel_MCC_All(i, Heuri_Info_MCC_All);
+			System.out.println("level " + i + " , size: " + Heuri_Info_MCC.size());
+			//num_of_categs+=Heuri_Info_MCC.size();
+		}
+		//System.out.println("Number of categs " + num_of_categs);
+		//System.out.println("All size " + Heuri_Info_MCC.size());
+
+	}
+	
+	public void check_Heuri_Info_MCC(HashMap<Integer, CategoryInfo> Heuri_Info_MCC){
+		for(Integer catid : Heuri_Info_MCC.keySet()){
+			System.out.println("Catid " + catid + ", inside: " + Heuri_Info_MCC.get(catid).categoryid + " " + Heuri_Info_MCC.get(catid).fullpath);
+			System.out.println("\tChildList: ");
+			for(CategoryInfo child : Heuri_Info_MCC.get(catid).childCategory)
+				System.out.println("child " + child.categoryid);
+		}
+	}
+	
 	private void get_store_NearestWords(HashMap<Integer, CategoryInfo> heuri_Info_MCC) throws SQLException {
 		// TODO Auto-generated method stub
 		if (words == null)
@@ -83,13 +255,40 @@ public class MainCentroid {
 			if(centroid == null) continue;
 			Collection<String> KnnWordsList = StaticValues.vec.wordsNearest(centroid, 1000);
 			// Knn기반 단어 정보 저장.
-			//////curCate.KnnWordsList = KnnWordsList;
-			//////ODP_DB.storeKNNResult(curCate); 
+			curCate.KnnWordsList = KnnWordsList;
+			ODP_DB.storeKNNResult(curCate); 
 			
 		}
 		
 	}
 
+	private void get_store_NearestWords_MC(Integer mc_catid, HashMap<Integer, CategoryInfo> heuri_Info_MCC, INDArray mc) throws SQLException {
+
+		if(heuri_Info_MCC.containsKey(mc_catid)){
+			CategoryInfo curCate = heuri_Info_MCC.get(mc_catid);
+			//getCategoryMC - then use this map to get mc's
+			//if(centroid == null) continue;
+			Collection<String> KnnWordsList = StaticValues.vec.wordsNearest(mc, 1000);
+			// Knn기반 단어 정보 저장.
+			curCate.KnnWordsList = KnnWordsList;
+			ODP_DB.storeKNNResult(curCate); 
+			//System.out.println("MC itself: " + mc);
+			System.out.println("\tNow in db" + mc_catid);
+		}
+	}
+	
+	private void get_store_NearestWords_MC_afterMap(HashMap<Integer, CategoryInfo> heuri_Info_MCC, Map<Integer, INDArray> mergeCentroids) throws SQLException {
+
+		for(Integer catid : heuri_Info_MCC.keySet()){
+			CategoryInfo curCate = heuri_Info_MCC.get(catid);
+			Collection<String> KnnWordsList = StaticValues.vec.wordsNearest(mergeCentroids.get(catid), 1000);
+			// Knn기반 단어 정보 저장.
+			curCate.KnnWordsList = KnnWordsList;
+			ODP_DB.storeKNNResult(curCate); 
+			System.out.println("\tNow in db" + catid);
+		}
+	}
+	
 	private INDArray getCategoryCentroid_MCC(CategoryInfo category) { //this function makes centroid + child centroids
 		// TODO Auto-generated method stub
 
@@ -145,23 +344,68 @@ public class MainCentroid {
 			//System.out.println("Category " + category.parentid + " vot tebe child: " + cat.categoryid);
 		//}
 		
+		//System.out.println("Category docs number " + category.documentInfo.size());
 		for (int i = 0; i < category.documentInfo.size(); i++) {
 			Document doc = category.documentInfo.get(i);
 			//System.out.println("for categ " + category.categoryid + "Doc title and desc: " + doc.title + doc.description);
 			
 			INDArray tmp = getCentroid(doc.title + " " + doc.description, 1);
-
-			/*if (tmp == null){
-				System.out.println("tmp is null!");
-			}*/
+			//System.out.println("\ttmp doc " + i + " for " + category.categoryid + " is: " + tmp);
+			//if (tmp == null){
+				//System.out.println("tmp is null!");
+			//}
 			if (result == null) {
 				result = tmp;
 			}
 
 			else {
 				if(tmp!=null){
-				result = result.add(tmp);
-				//System.out.println("Result not new");
+					if(!tmp.toString().contains("∞") && !tmp.toString().contains("NaN")){
+						result = result.add(tmp);
+					}
+				}
+				else{
+					continue;
+				}
+			}
+		}
+		if(result == null){
+			result = Nd4j.zeros(300);
+			//System.out.println("getCategoryCentroid for category " + category.categoryid + " init 300 zeros..");
+			//return null;
+			return result;
+		}
+		
+		result = result.div(category.documentInfo.size());
+
+		return result;
+	}
+	
+	
+	private INDArray getCategoryCentroidNew(CategoryInfo category) {
+
+		INDArray result = null;
+		ArrayList<CategoryInfo> childList = category.childCategory;
+
+		//System.out.println("Category docs number " + category.documentInfo.size());
+		for (int i = 0; i < category.documentInfo.size(); i++) {
+			Document doc = category.documentInfo.get(i);
+			//System.out.println("for categ " + category.categoryid + "Doc title and desc: " + doc.title + doc.description + doc.urlid);
+			
+			INDArray tmp = getSentenceVec(doc.title + " " + doc.description);
+			//System.out.println("\ttmp doc " + i + " for " + category.categoryid + " is: " + tmp);
+			if (tmp == null){
+				System.out.println("tmp is null!");
+			}
+			if (result == null) {
+				result = tmp;
+			}
+
+			else {
+				if(tmp!=null){
+					//if(!tmp.toString().contains("∞") && !tmp.toString().contains("NaN")){
+						result = result.add(tmp);
+					//}
 				}
 				else{
 					continue;
@@ -171,51 +415,79 @@ public class MainCentroid {
 		if(result == null){
 			result = Nd4j.zeros(300);
 			System.out.println("getCategoryCentroid for category " + category.categoryid + " init 300 zeros..");
-			//return null;
 			return result;
 		}
 		
 		result = result.div(category.documentInfo.size());
-		//if (weight != 1)
-			//result = result.mul(weight);
-		// 실제 centroid를 계산한다.
+		//System.out.println("Centroid " + result);
 		return result;
 	}
+	
+	private INDArray getCategoryMCfromDB(CategoryInfo parentCategoryInfo, MysqlLoader loader) { 
+		//this function is to make one whole mc
+		// TODO Auto-generated method stub
 
-	private void makeMCMap(List<CategoryInfo> allCategoriesMap) {
-		
-	///	ArrayList<Integer> categoryIds = new ArrayList<Integer>(allCategoriesMap.keySet());
-		HashMap<Integer, INDArray> centroidMap = new HashMap<Integer, INDArray>();
-		int curID;
-		CategoryInfo curCate = null;
-		INDArray centroid;
-		//for (int i = 0; i < categoryIds.size(); i++) { 
-		///for(Integer categ : allCategoriesMap.keySet()) {
-			//curID = categoryIds.get(i);
-			//curID = categ;
-			///curCate = allCategoriesMap.get(categ);
-			///ArrayList<CategoryInfo> childs = curCate.childCategory;
+		ArrayList<CategoryInfo> childList = parentCategoryInfo.childCategory;
 
-			///for(CategoryInfo child : childs) {
-				//System.out.println("1.Category " + categ + " child: " + child.categoryid);
-				//System.out.println("WRONG: 2.Category " + curCate.categoryid + " child: " + child.categoryid);
-				//System.out.println("3.Category " + curCate.parentid + " child: " + child.categoryid);
-				///centroid = getCategoryCentroid(child);
-				///centroidMap.put(child.categoryid, centroid); 
-			///}
+		if ( parentCategoryInfo.isleaf == 1 || childList == null || childList.size() == 0) {
+			INDArray leafCentroid = getCategoryCentroid(parentCategoryInfo);
 			
-			//INDArray centroid = getCategoryCentroid_MCC(curCate);
-			///centroid = getCategoryCentroid(curCate);
-			///centroidMap.put(categ, centroid); 
-		///}
-		//System.out.println("Centroid map is ready of size " + centroidMap.size());
-		Map<Integer, INDArray> mergeCentroids = new HashMap<Integer, INDArray>();
-		curCate = allCategoriesMap.get(0);
-		getCategoryMC(curCate, curCate.categoryid,  mergeCentroids);
-		System.out.println("MC map is ready of size " + mergeCentroids.size());
+			if (leafCentroid == null) {
+				System.out.println("Catid " + parentCategoryInfo.categoryid + " Warning! leaf centroid returned null " + leafCentroid);
+			}
+			return leafCentroid;
+		} 
+		else {
+			/* add centroid of a category and children's merge centroids */
+			INDArray parentCentroid = getCategoryCentroid(parentCategoryInfo);
+			//System.out.println("Parent centroid catid: " +  parentCategoryInfo.categoryid  + " : " + parentCentroid);
+			INDArray childCentroid = null;
+			for (CategoryInfo child : childList) {
+				try {
+					childCentroid = loadINDArrayFromDB(child.categoryid, loader);
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} //need to get from mcs DB
+				if (childCentroid == null) {
+					System.out.println("empty child centroid for category "+ child.parentid + ", skipping..");
+					childCentroid = Nd4j.zeros(300);
+					//continue;
+				}
+				
+		if(parentCentroid!=null){
+			parentCentroid = parentCentroid.add(childCentroid);
+		}
+		else{
+			System.out.println("Catid " + parentCategoryInfo.categoryid + " Warning! parent centroid returned null " + parentCentroid);
+			//continue;
+			}
+		}
+		double numOfCentroids = childList.size() + 1;
+		parentCentroid.div(numOfCentroids);
+		
+		return parentCentroid;
+			}
+		}
+	
+	private void makeMCMap(List<CategoryInfo> allCategoriesMap, HashMap<Integer, CategoryInfo> Heuri_Info_MCC) {
+		
+		///	ArrayList<Integer> categoryIds = new ArrayList<Integer>(allCategoriesMap.keySet());
+			HashMap<Integer, INDArray> centroidMap = new HashMap<Integer, INDArray>();
+			int curID;
+			CategoryInfo curCate = null;
+			INDArray centroid;
 
-	}
-	private void getCategoryMC(CategoryInfo category, int rootId, Map<Integer, INDArray> mergeCentroidMap) { //this function is to make one whole mc
+			Map<Integer, INDArray> mergeCentroids = new HashMap<Integer, INDArray>();
+			curCate = allCategoriesMap.get(0);
+			getCategoryMC(curCate, curCate.categoryid,  mergeCentroids, Heuri_Info_MCC);
+			System.out.println("MC map is ready of size " + mergeCentroids.size());
+			//get_store_NearestWords_MC_afterMap(Heuri_Info_MCC, mergeCentroids);
+
+
+		}
+	
+	private void getCategoryMC(CategoryInfo category, int rootId, Map<Integer, INDArray> mergeCentroidMap, HashMap<Integer, CategoryInfo> Heuri_Info_MCC) { //this function is to make one whole mc
 		// TODO Auto-generated method stub
 
 		//INDArray result = null;
@@ -240,7 +512,7 @@ public class MainCentroid {
 		} else {
 			/* add centroid of a category and children's merge centroids */
 			for (CategoryInfo child : childList) {
-				getCategoryMC(child, child.categoryid, mergeCentroidMap);
+				getCategoryMC(child, child.categoryid, mergeCentroidMap, Heuri_Info_MCC);
 			}
 
 			/*already computed after recursion returns*/
@@ -248,7 +520,9 @@ public class MainCentroid {
 			INDArray mergeCentroid = null;
 			//assert(currentCentroid != null);
 			if (currentCentroid != null) {
-				mergeCentroid = currentCentroid.mul(0.8);
+				//mergeCentroid = currentCentroid.mul(0.8);
+				mergeCentroid = currentCentroid;
+
 			}
 			
 			if (mergeCentroid == null) {
@@ -257,19 +531,33 @@ public class MainCentroid {
 			}
 			for (CategoryInfo child : childList) {
 				INDArray childCentroid = mergeCentroidMap.get(child.categoryid);
-				System.out.println("MC child is " + child.categoryid);
+				//System.out.println("MC child is " + child.categoryid);
 				if (childCentroid == null) {
 					System.out.println("empty child centroid for category "+ child.parentid + ", skipping..");
 					continue;
 				}
 				
-				mergeCentroid = mergeCentroid.mul(0.8).add(childCentroid.mul(0.2)) /*/norm) */;
+				//mergeCentroid = mergeCentroid.mul(0.8).add(childCentroid.mul(0.2)) /*/norm) */;
+				mergeCentroid = mergeCentroid.add(childCentroid) /*/norm) */;
+
 				// not sure why divide every time
 				double numOfCentroids = childList.size() + 1;
 				mergeCentroid.div(numOfCentroids);
+				mergeCentroid.div(2);
+				//mergeCentroid.div(1.5);
+
 			}
-			mergeCentroidMap.put(rootId, mergeCentroid);		}
-		System.out.println("MC map size " + mergeCentroidMap.size());
+			mergeCentroidMap.put(rootId, mergeCentroid);
+			try {
+				get_store_NearestWords_MC(rootId, Heuri_Info_MCC, mergeCentroid);
+				//System.out.println("MC itself: " + mergeCentroid);
+
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			}
+		//System.out.println("MC map size " + mergeCentroidMap.size());
 	}
 	
 	private INDArray getCentroid(String sentence, int weight) {
@@ -282,15 +570,20 @@ public class MainCentroid {
 		double mok_sum = 0;
 		for (int i = 0; i < wordLists.length; i++) {
 			if (termDF.containsKey(wordLists[i])) {
+				if(words.vector(wordLists[i]) !=null){
 				INDArray tmp = words.vector(wordLists[i]).div(Math.log(termDF.get(wordLists[i])));
-
+				//System.out.println("Word " + wordLists[i] + " has vector " + tmp);
 				mok_sum += ((1.0) / Math.log(termDF.get(wordLists[i])));
 				if (result == null)
 					result = tmp;
-
 				else
-					result.add(tmp);
-			} else {
+				{
+					if(!tmp.toString().contains("∞") && !tmp.toString().contains("NaN")){
+						result = result.add(tmp);
+					}
+				}
+			}
+			}else {
 				// 바이그램 단위로도 실험해보기
 			}
 			// 벡터가 LookUpTable에 없는 경우도 실험해보기
@@ -301,6 +594,27 @@ public class MainCentroid {
 		return result;
 	}
 
+	private INDArray getSentenceVec(String sentence) {
+		// TODO Auto-generated method stub
+
+		INDArray result = Nd4j.zeros(300);
+		String[] wordLists = sentence.split(" ");
+
+		for (int i = 0; i < wordLists.length; i++) {
+			if(words.vector(wordLists[i]) == null){
+				continue;
+			}
+
+				INDArray tmp = words.vector(wordLists[i]);
+				result = result.add(tmp);
+		}
+		
+		if(result != null)
+			result.div(wordLists.length);
+
+		return result;
+	}
+	
 	public static String deleteUselessLetter(String oneSentence) {
 		if (oneSentence == null)
 			return null;
@@ -381,12 +695,40 @@ public class MainCentroid {
 				heuri.childCategory.add(childCate);
 
 				HeuriCate_speciflevel.put(childCate.parentid, heuri);
+
 			}
 		}
 
 		return HeuriCate_speciflevel;
+
 	}
 
+	private HashMap<Integer, CategoryInfo> getHuri_specificLevel_MCC_All(int level, HashMap<Integer, CategoryInfo> allMap) throws SQLException, IOException {
+		// TODO Auto-generated method stub
+		//don't need HeuriCate_speciflevel if need to make all the categories
+		HashMap<Integer, CategoryInfo> HeuriCate_speciflevel = getHeuriCate_level(level - 1);
+		ArrayList<CategoryInfo> allCate_Chilelevel = ODP_DB.getCategoryInfo_Level(level);
+
+		System.out.println(HeuriCate_speciflevel.size() + " " + allCate_Chilelevel.size());
+		// Child category 정보를 부모 카테고리에 연결한다.
+		for (int i = 0; i < allCate_Chilelevel.size(); i++) {
+
+			CategoryInfo childCate = allCate_Chilelevel.get(i);
+			if (HeuriCate_speciflevel.containsKey(childCate.parentid)) {
+				CategoryInfo heuri = HeuriCate_speciflevel.get(childCate.parentid);
+
+				// ChildCategory 추가 - 카테고리 정보와 documentInfo도 추가
+				childCate.documentInfo = setDocumentInfo(childCate.categoryid);
+				heuri.childCategory.add(childCate);
+
+				allMap.put(childCate.parentid, heuri);
+
+			}
+		}
+		return allMap;
+
+	}
+	
 	private HashMap<Integer, CategoryInfo> getAllCategories() throws SQLException, IOException {
 		// TODO Auto-generated method stub
 		//don't need HeuriCate_speciflevel if need to make all the categories
@@ -456,6 +798,48 @@ public class MainCentroid {
 		}
 		System.out.println("Size of allCategories in list is " + allCategoriesList.size());
 		return allCategoriesList;
+	}
+	
+	private HashMap<Integer, CategoryInfo> getCategoriesNewListByLevel(int parent_level, int child_level) throws SQLException, IOException {
+		// TODO Auto-generated method stub
+		ArrayList<CategoryInfo> childCategoriesList = ODP_DB.getCategoryInfo_Level(child_level); // merge centroid info 		
+		HashMap<Integer, CategoryInfo> parentCategoriesList = ODP_DB.getCategoryInfoLevel(parent_level); // centroid info
+		
+		//HashMap<Integer, CategoryInfo> parentCategoriesListUpdated = ODP_DB.getCategoryInfoLevel(parent_level); // centroid info
+ 
+		System.out.println("childCategoriesList size is " + childCategoriesList.size());
+		System.out.println("parentCategoriesList size is " + parentCategoriesList.size());
+
+		if(!childCategoriesList.isEmpty()){
+			for(Integer catid : parentCategoriesList.keySet()){
+				//System.out.println("parentCategory " + catid);
+				parentCategoriesList.get(catid).documentInfo = setDocumentInfo(catid);
+				parentCategoriesList.get(catid).childCategory = childCategoriesList;
+			}
+			
+			/*for (Integer catid: childCategoriesList.keySet()) {
+				CategoryInfo childCategory = childCategoriesList.get(catid);
+				if (childCategory.parentid <= 0) {
+					continue;
+				}
+				System.out.println("Child: " + childCategory.categoryid + " , parent: " + childCategory.parentid);
+				CategoryInfo parentCategory = parentCategoriesList.get(childCategory.parentid);
+				
+				parentCategory.documentInfo = setDocumentInfo(parentCategory.categoryid);
+				childCategory.documentInfo = setDocumentInfo(childCategory.categoryid);
+				System.out.println("For parent " + childCategory.parentid + " child: " + childCategory.categoryid);
+				parentCategory.childCategory.add(childCategory);
+				}*/
+		}
+		else{
+			System.out.println("\tChild list is empty!");
+			for(Integer catid : parentCategoriesList.keySet()){
+				//System.out.println("parentCategory " + catid);
+				parentCategoriesList.get(catid).documentInfo = setDocumentInfo(catid);
+				
+			}
+		}
+		return parentCategoriesList;
 	}
 	
 	// 휴리스틱 규칙을 따르는 카테고리들 중, 특정 레벨에 속한 카테고리를 가져온다.
